@@ -245,6 +245,78 @@
   }
   .error-msg.show { display: block; }
 
+  /* ── My VMs tab ─────────────────────────────────────────────────────── */
+  .vm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+  }
+
+  .vm-list:empty::before {
+    content: 'No saved VMs yet. Create one on the "New VM" tab!';
+    display: block;
+    font-size: 11px;
+    color: #808080;
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  .vm-entry {
+    background: #fff;
+    border: 1px solid;
+    border-color: #808080 #fff #fff #808080;
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .vm-entry:hover { background: #000080; color: #fff; }
+  .vm-entry:hover .vm-meta { color: #aac8ff; }
+  .vm-entry:hover .vm-remove { color: #ffaaaa; }
+
+  .vm-code {
+    font-weight: bold;
+    letter-spacing: 3px;
+    font-size: 14px;
+    min-width: 72px;
+  }
+
+  .vm-meta {
+    font-size: 10px;
+    color: #666;
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  .vm-remove {
+    font-size: 11px;
+    color: #cc0000;
+    cursor: pointer;
+    padding: 2px 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .vm-remove:hover { text-decoration: underline; }
+
+  .myvms-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .myvms-actions .win-btn {
+    margin-top: 0;
+    font-size: 11px;
+    padding: 3px 10px;
+  }
+
   /* Taskbar */
   .taskbar {
     position: fixed;
@@ -303,6 +375,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('create')">New VM</button>
       <button class="tab" onclick="switchTab('access')">Access VM</button>
+      <button class="tab" onclick="switchTab('myvms')">My VMs</button>
     </div>
 
     <div class="panel">
@@ -323,7 +396,7 @@
         <div class="result-box" id="create-result">
           <p>Your VM access code:</p>
           <div class="code-display" id="new-code"></div>
-          <p style="text-align:center; color:#800000;">⚠ Save this code — you'll need it to reconnect!</p>
+          <p style="text-align:center; color:#800000;">⚠ Code saved to "My VMs" automatically!</p>
           <button class="go-btn" id="go-btn" onclick="goToVM()">Connect to VM →</button>
         </div>
 
@@ -353,6 +426,17 @@
           <span id="access-status">Enter code above</span>
         </div>
       </div>
+
+      <!-- MY VMs TAB -->
+      <div id="tab-myvms" class="tab-content">
+        <p style="font-size:11px; color:#444; margin-bottom:8px;">
+          Click a VM to connect. Codes are saved in your browser.
+        </p>
+        <div class="vm-list" id="vm-list"></div>
+        <div class="myvms-actions">
+          <button class="win-btn" onclick="clearAllVMs()" style="color:#880000;">✕ Clear All</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -363,14 +447,19 @@
 </div>
 
 <script>
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  const TAB_NAMES = ['create', 'access', 'myvms'];
+
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
-      t.classList.toggle('active', ['create','access'][i] === name);
+      t.classList.toggle('active', TAB_NAMES[i] === name);
     });
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'myvms') renderVMList();
   }
 
+  // ── Status helpers ─────────────────────────────────────────────────────────
   function setStatus(prefix, text, state) {
     const dot = document.getElementById(prefix + '-dot');
     const status = document.getElementById(prefix + '-status');
@@ -388,6 +477,69 @@
     document.getElementById(prefix + '-error').classList.remove('show');
   }
 
+  // ── localStorage VM history ────────────────────────────────────────────────
+  const LS_KEY = 'webvm_history';
+
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }
+    catch { return []; }
+  }
+
+  function saveHistory(list) {
+    localStorage.setItem(LS_KEY, JSON.stringify(list));
+  }
+
+  function addToHistory(code, type) {
+    const list = loadHistory();
+    // Avoid duplicates — move to top if already present
+    const filtered = list.filter(v => v.code !== code);
+    filtered.unshift({ code, type, created: Date.now() });
+    saveHistory(filtered);
+  }
+
+  function removeFromHistory(code) {
+    saveHistory(loadHistory().filter(v => v.code !== code));
+    renderVMList();
+  }
+
+  function clearAllVMs() {
+    if (!confirm('Remove all saved VM codes from this browser?')) return;
+    saveHistory([]);
+    renderVMList();
+  }
+
+  function formatDate(ts) {
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ` +
+           `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function osLabel(type) {
+    return type === 'xp' ? 'Windows XP' : type === '2000' ? 'Windows 2000' : type;
+  }
+
+  function renderVMList() {
+    const list = loadHistory();
+    const el = document.getElementById('vm-list');
+    el.innerHTML = '';
+
+    list.forEach(vm => {
+      const entry = document.createElement('div');
+      entry.className = 'vm-entry';
+      entry.innerHTML = `
+        <span class="vm-code">${vm.code}</span>
+        <span class="vm-meta">${osLabel(vm.type)}<br>${vm.created ? formatDate(vm.created) : ''}</span>
+        <span class="vm-remove" title="Remove from list" onclick="event.stopPropagation(); removeFromHistory('${vm.code}')">✕ Remove</span>
+      `;
+      entry.addEventListener('click', () => {
+        window.location.href = '/vm/' + vm.code;
+      });
+      el.appendChild(entry);
+    });
+  }
+
+  // ── Create VM ──────────────────────────────────────────────────────────────
   let createdCode = '';
 
   async function createVM() {
@@ -408,14 +560,22 @@
       });
       const data = await res.json();
 
+      if (res.status === 429) {
+        // Rate limited — show the cooldown message prominently
+        throw new Error(data.error || 'Rate limited. Try again later.');
+      }
+
       if (!res.ok) throw new Error(data.error || 'Unknown error');
 
       createdCode = data.code;
       document.getElementById('new-code').textContent = data.code;
       document.getElementById('create-result').classList.add('show');
       setStatus('create', 'VM created! Starting...', 'green');
+
+      // Save to localStorage history
+      addToHistory(data.code, data.type);
     } catch (err) {
-      showError('create', '✕ Error: ' + err.message);
+      showError('create', '✕ ' + err.message);
       setStatus('create', 'Failed', 'red');
     } finally {
       btn.disabled = false;
@@ -427,6 +587,7 @@
     if (createdCode) window.location.href = '/vm/' + createdCode;
   }
 
+  // ── Access VM ──────────────────────────────────────────────────────────────
   async function accessVM() {
     const code = document.getElementById('vm-code').value.trim().toUpperCase();
     hideError('access');
@@ -450,7 +611,7 @@
     }
   }
 
-  // Clock
+  // ── Clock ──────────────────────────────────────────────────────────────────
   function tick() {
     const now = new Date();
     const h = String(now.getHours()).padStart(2, '0');

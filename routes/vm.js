@@ -3,14 +3,54 @@ import { createVM, getVM, getVMStatus, ensureVMRunning, getVMSpicePort } from '.
 
 export const vmRouter = Router();
 
+// ── IP rate limiting ──────────────────────────────────────────────────────────
+// Maps IP → timestamp (ms) of last successful VM creation
+const ipLastCreated = new Map();
+const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+function getClientIP(req) {
+  // Respect X-Forwarded-For if behind a reverse proxy (nginx, Cloudflare, etc.)
+  const forwarded = req.headers['x-forwarded-for'];
+  return forwarded ? forwarded.split(',')[0].trim() : req.socket.remoteAddress;
+}
+
+function checkCooldown(ip) {
+  const last = ipLastCreated.get(ip);
+  if (!last) return null; // no cooldown
+  const elapsed = Date.now() - last;
+  if (elapsed < COOLDOWN_MS) {
+    const remaining = COOLDOWN_MS - elapsed;
+    const mins = Math.ceil(remaining / 60000);
+    const hrs  = Math.floor(mins / 60);
+    const rem  = mins % 60;
+    const label = hrs > 0
+      ? `${hrs}h ${rem}m`
+      : `${mins}m`;
+    return label;
+  }
+  return null; // cooldown expired
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // POST /api/vm/create  body: { type: 'xp' | '2000' }
 vmRouter.post('/create', async (req, res) => {
   const { type } = req.body;
   if (!['xp', '2000'].includes(type)) {
     return res.status(400).json({ error: 'type must be "xp" or "2000"' });
   }
+
+  const ip = getClientIP(req);
+  const wait = checkCooldown(ip);
+  if (wait) {
+    return res.status(429).json({
+      error: `You can only create a VM once every 3 hours. Try again in ${wait}.`,
+      retryAfter: wait
+    });
+  }
+
   try {
     const result = await createVM(type);
+    ipLastCreated.set(ip, Date.now()); // record creation time
     res.json({ success: true, code: result.code, type: result.type });
   } catch (err) {
     console.error('createVM error:', err);
