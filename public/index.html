@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VM Portal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #008080;
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  /* Win9x window chrome */
+  .window {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #ffffff #808080 #808080 #ffffff;
+    box-shadow: 2px 2px 0 #000;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .window-title {
+    background: linear-gradient(90deg, #000080, #1084d0);
+    color: #fff;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 3px 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+
+  .window-title .icon { font-size: 14px; }
+
+  .window-title .btns {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+  }
+
+  .window-title .btns button {
+    width: 16px;
+    height: 14px;
+    font-size: 9px;
+    background: #c0c0c0;
+    border: 1px solid;
+    border-color: #fff #808080 #808080 #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    color: #000;
+    font-family: 'Courier New', monospace;
+  }
+
+  .window-body {
+    padding: 16px;
+  }
+
+  /* Tab bar */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: -1px;
+    padding: 0 4px;
+  }
+
+  .tab {
+    background: #c0c0c0;
+    border: 1px solid;
+    border-color: #fff #808080 #c0c0c0 #fff;
+    padding: 4px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-right: 2px;
+    position: relative;
+    top: 1px;
+  }
+
+  .tab.active {
+    background: #c0c0c0;
+    border-bottom-color: #c0c0c0;
+    font-weight: bold;
+    z-index: 1;
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .panel {
+    border: 1px solid;
+    border-color: #808080 #fff #fff #808080;
+    padding: 16px;
+    background: #c0c0c0;
+  }
+
+  /* Form elements */
+  label {
+    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+
+  label:first-child { margin-top: 0; }
+
+  select, input[type="text"] {
+    width: 100%;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 3px 4px;
+    background: #fff;
+    border: 1px solid;
+    border-color: #808080 #fff #fff #808080;
+    outline: none;
+  }
+
+  select:focus, input[type="text"]:focus {
+    outline: 1px dotted #000;
+    outline-offset: -2px;
+  }
+
+  .win-btn {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #ffffff #808080 #808080 #ffffff;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 4px 20px;
+    cursor: pointer;
+    margin-top: 14px;
+    display: block;
+    width: 100%;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  .win-btn:active {
+    border-color: #808080 #ffffff #ffffff #808080;
+    padding: 5px 19px 3px 21px;
+  }
+
+  .win-btn:disabled {
+    color: #808080;
+    cursor: default;
+  }
+
+  .win-btn.primary {
+    font-weight: bold;
+  }
+
+  /* Status bar */
+  .statusbar {
+    border-top: 1px solid #808080;
+    margin-top: 12px;
+    padding-top: 6px;
+    font-size: 11px;
+    color: #444;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 20px;
+  }
+
+  .statusbar .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #808080;
+    border: 1px solid #606060;
+    flex-shrink: 0;
+  }
+
+  .statusbar .dot.green { background: #00aa00; border-color: #006600; }
+  .statusbar .dot.red { background: #cc0000; border-color: #880000; }
+  .statusbar .dot.yellow { background: #cc8800; border-color: #886600; }
+
+  /* Result box */
+  .result-box {
+    display: none;
+    background: #fff;
+    border: 1px solid #808080;
+    border-color: #808080 #fff #fff #808080;
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+
+  .result-box.show { display: block; }
+
+  .code-display {
+    font-size: 24px;
+    font-weight: bold;
+    letter-spacing: 6px;
+    text-align: center;
+    color: #000080;
+    margin: 6px 0;
+    font-family: 'Courier New', monospace;
+  }
+
+  .result-box p { margin-bottom: 4px; font-size: 11px; color: #555; }
+
+  .go-btn {
+    background: #000080;
+    color: #fff;
+    border: 2px solid;
+    border-color: #6060c0 #000040 #000040 #6060c0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 4px 16px;
+    cursor: pointer;
+    margin-top: 8px;
+    width: 100%;
+  }
+
+  .go-btn:active {
+    border-color: #000040 #6060c0 #6060c0 #000040;
+  }
+
+  /* Separator */
+  .sep {
+    border: none;
+    border-top: 1px solid #808080;
+    border-bottom: 1px solid #fff;
+    margin: 10px 0;
+  }
+
+  /* Error */
+  .error-msg {
+    color: #cc0000;
+    font-size: 11px;
+    margin-top: 6px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  /* Taskbar */
+  .taskbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    background: #c0c0c0;
+    border-top: 2px solid;
+    border-color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    gap: 4px;
+    z-index: 100;
+  }
+
+  .start-btn {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #fff #808080 #808080 #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .taskbar-clock {
+    margin-left: auto;
+    border: 1px solid;
+    border-color: #808080 #fff #fff #808080;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <div class="window-title">
+    <span class="icon">🖥</span>
+    VM Portal — Remote Desktop Access
+    <div class="btns">
+      <button>_</button>
+      <button>□</button>
+      <button>✕</button>
+    </div>
+  </div>
+
+  <div class="window-body">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('create')">New VM</button>
+      <button class="tab" onclick="switchTab('access')">Access VM</button>
+    </div>
+
+    <div class="panel">
+      <!-- CREATE TAB -->
+      <div id="tab-create" class="tab-content active">
+        <label for="vm-type">Operating System:</label>
+        <select id="vm-type">
+          <option value="xp">Windows XP</option>
+          <option value="2000">Windows 2000</option>
+        </select>
+
+        <hr class="sep">
+
+        <button class="win-btn primary" id="create-btn" onclick="createVM()">
+          ▶ Create New Virtual Machine
+        </button>
+
+        <div class="result-box" id="create-result">
+          <p>Your VM access code:</p>
+          <div class="code-display" id="new-code"></div>
+          <p style="text-align:center; color:#800000;">⚠ Save this code — you'll need it to reconnect!</p>
+          <button class="go-btn" id="go-btn" onclick="goToVM()">Connect to VM →</button>
+        </div>
+
+        <div class="error-msg" id="create-error"></div>
+
+        <div class="statusbar">
+          <div class="dot" id="create-dot"></div>
+          <span id="create-status">Ready</span>
+        </div>
+      </div>
+
+      <!-- ACCESS TAB -->
+      <div id="tab-access" class="tab-content">
+        <label for="vm-code">Enter your 6-character VM code:</label>
+        <input type="text" id="vm-code" maxlength="6" placeholder="A1B2C3"
+          oninput="this.value = this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter') accessVM()">
+
+        <button class="win-btn primary" onclick="accessVM()">
+          ▶ Connect to VM
+        </button>
+
+        <div class="error-msg" id="access-error"></div>
+
+        <div class="statusbar">
+          <div class="dot" id="access-dot"></div>
+          <span id="access-status">Enter code above</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="taskbar">
+  <button class="start-btn">⊞ Start</button>
+  <div class="taskbar-clock" id="clock">00:00</div>
+</div>
+
+<script>
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', ['create','access'][i] === name);
+    });
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  function setStatus(prefix, text, state) {
+    const dot = document.getElementById(prefix + '-dot');
+    const status = document.getElementById(prefix + '-status');
+    dot.className = 'dot' + (state ? ' ' + state : '');
+    status.textContent = text;
+  }
+
+  function showError(prefix, msg) {
+    const el = document.getElementById(prefix + '-error');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+
+  function hideError(prefix) {
+    document.getElementById(prefix + '-error').classList.remove('show');
+  }
+
+  let createdCode = '';
+
+  async function createVM() {
+    const type = document.getElementById('vm-type').value;
+    const btn = document.getElementById('create-btn');
+    hideError('create');
+    document.getElementById('create-result').classList.remove('show');
+
+    btn.disabled = true;
+    btn.textContent = '⌛ Creating VM...';
+    setStatus('create', 'Copying disk image...', 'yellow');
+
+    try {
+      const res = await fetch('/api/vm/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+      createdCode = data.code;
+      document.getElementById('new-code').textContent = data.code;
+      document.getElementById('create-result').classList.add('show');
+      setStatus('create', 'VM created! Starting...', 'green');
+    } catch (err) {
+      showError('create', '✕ Error: ' + err.message);
+      setStatus('create', 'Failed', 'red');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▶ Create New Virtual Machine';
+    }
+  }
+
+  function goToVM() {
+    if (createdCode) window.location.href = '/vm/' + createdCode;
+  }
+
+  async function accessVM() {
+    const code = document.getElementById('vm-code').value.trim().toUpperCase();
+    hideError('access');
+
+    if (code.length !== 6) {
+      showError('access', '✕ Code must be exactly 6 characters.');
+      return;
+    }
+
+    setStatus('access', 'Looking up VM...', 'yellow');
+
+    try {
+      const res = await fetch('/api/vm/' + code);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'VM not found');
+      setStatus('access', 'Found! Connecting...', 'green');
+      window.location.href = '/vm/' + code;
+    } catch (err) {
+      showError('access', '✕ ' + err.message);
+      setStatus('access', 'Not found', 'red');
+    }
+  }
+
+  // Clock
+  function tick() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('clock').textContent = h + ':' + m;
+  }
+  tick();
+  setInterval(tick, 10000);
+</script>
+</body>
+</html>

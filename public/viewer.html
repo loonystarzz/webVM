@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VM Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #000;
+    font-family: 'Courier New', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    background: #c0c0c0;
+    border-bottom: 2px solid;
+    border-color: #808080;
+    padding: 3px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    height: 28px;
+  }
+
+  .toolbar-btn {
+    background: #c0c0c0;
+    border: 1px solid;
+    border-color: #fff #808080 #808080 #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .toolbar-btn:active {
+    border-color: #808080 #fff #fff #808080;
+  }
+
+  .toolbar-sep {
+    width: 1px;
+    height: 18px;
+    background: #808080;
+    margin: 0 4px;
+  }
+
+  .toolbar-label {
+    font-size: 11px;
+    color: #000;
+  }
+
+  .code-badge {
+    background: #000080;
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 8px;
+    letter-spacing: 2px;
+    font-weight: bold;
+  }
+
+  .status-area {
+    margin-left: auto;
+    font-size: 11px;
+    color: #444;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #cc8800;
+    border: 1px solid #886600;
+  }
+  .status-dot.connected { background: #00aa00; border-color: #006600; }
+  .status-dot.error { background: #cc0000; border-color: #880000; }
+
+  /* SPICE canvas container */
+  #spice-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+  }
+
+  #spice-area.capture-active {
+    cursor: none;
+  }
+
+  #spice-area canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  #spice-container {
+    transform-origin: center center;
+  }
+
+  /* Pointer lock hint banner */
+  #capture-hint {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 3px;
+    pointer-events: none;
+    display: none;
+    z-index: 30;
+    white-space: nowrap;
+  }
+  #capture-hint.visible { display: block; }
+
+  /* Fullscreen: keep black bars, no stretch */
+  #spice-area:fullscreen,
+  #spice-area:-webkit-full-screen {
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Overlay messages */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    color: #00ff00;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    gap: 8px;
+    z-index: 10;
+  }
+
+  #overlay.hidden { display: none; }
+
+  .blink { animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .overlay-window {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #fff #808080 #808080 #fff;
+    width: 340px;
+    box-shadow: 3px 3px 0 #000;
+  }
+
+  .overlay-title {
+    background: linear-gradient(90deg, #000080, #1084d0);
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 3px 6px;
+  }
+
+  .overlay-body {
+    padding: 16px;
+    font-size: 12px;
+    color: #000;
+    line-height: 1.6;
+  }
+
+  .overlay-body .progress-bar {
+    height: 18px;
+    background: #fff;
+    border: 1px solid #808080;
+    border-color: #808080 #fff #fff #808080;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: #000080;
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  #error-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    font-family: 'Courier New', monospace;
+  }
+  #error-overlay.show { display: flex; }
+  #error-msg { color: #fff; font-size: 12px; text-align: center; max-width: 300px; line-height: 1.6; }
+  #error-msg a { color: #aaccff; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="toolbar-btn" onclick="history.back()">◀ Back</button>
+  <div class="toolbar-sep"></div>
+  <span class="toolbar-label">VM Code:</span>
+  <span class="code-badge" id="tb-code">------</span>
+  <span class="toolbar-label" id="tb-type"></span>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="location.reload()">↺ Reconnect</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" id="audio-btn" onclick="toggleAudio()" title="Audio">🔊 Audio</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" id="capture-btn" onclick="toggleCapture()" title="Click to capture mouse (Esc to release)">🖱 Capture</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
+  <div class="status-area">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Connecting…</span>
+  </div>
+</div>
+
+<div id="spice-area">
+  <!-- spice-html5 injects canvas here -->
+  <div id="spice-container"></div>
+
+  <div id="overlay">
+    <div class="overlay-window">
+      <div class="overlay-title">🖥 Connecting to Virtual Machine</div>
+      <div class="overlay-body">
+        <p id="overlay-msg">Starting VM and establishing SPICE connection…</p>
+        <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-overlay">
+    <div id="error-msg"></div>
+  </div>
+
+  <div id="capture-hint">🖱 Mouse captured — press Esc to release</div>
+</div>
+
+<!-- spice-html5: load from CDN or local -->
+<script type="module">
+  import { SpiceMainConn } from '/spice/main.js';
+
+  const params = new URLSearchParams(location.search);
+  const code = (params.get('code') || '').toUpperCase();
+  const type = params.get('type') || '';
+
+  document.getElementById('tb-code').textContent = code || '------';
+  document.getElementById('tb-type').textContent =
+    type === 'xp' ? 'Windows XP' : type === '2000' ? 'Windows 2000' : '';
+
+  let audioMuted = false;
+
+  function setStatus(text, state) {
+    document.getElementById('status-text').textContent = text;
+    const dot = document.getElementById('status-dot');
+    dot.className = 'status-dot' + (state ? ' ' + state : '');
+  }
+
+  function setProgress(pct, msg) {
+    document.getElementById('progress').style.width = pct + '%';
+    if (msg) document.getElementById('overlay-msg').textContent = msg;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-overlay');
+    document.getElementById('error-msg').innerHTML =
+      msg + '<br><br><a href="javascript:location.reload()">↺ Try again</a> &nbsp; <a href="/">⌂ Home</a>';
+    el.classList.add('show');
+    setStatus('Error', 'error');
+  }
+
+  function hideOverlay() {
+    document.getElementById('overlay').classList.add('hidden');
+  }
+
+  // SpicePlaybackConn dynamically creates/destroys <audio> in #spice-container.
+  // MutationObserver tracks it across PLAYBACK_STOP/START cycles.
+  function getAudio() { return document.querySelector('#spice-container audio'); }
+
+  function applyMuteState() {
+    const audio = getAudio();
+    if (!audio) return;
+    audio.muted = audioMuted;
+    if (!audioMuted) {
+      const tryPlay = () => audio.play().catch(e => console.warn('audio play:', e));
+      tryPlay();
+      audio.addEventListener('canplay', tryPlay, { once: true });
+    } else {
+      audio.pause();
+    }
+  }
+
+  const audioObserver = new MutationObserver(() => {
+    if (getAudio()) applyMuteState();
+  });
+  // Start observing once DOM is ready — will be connected after spice-container exists
+  audioObserver.observe(document.getElementById('spice-container'), { childList: true, subtree: true });
+
+  /* ── Mouse capture (Pointer Lock) ─────────────────────────────────── */
+  const spiceArea   = document.getElementById('spice-area');
+  const captureHint = document.getElementById('capture-hint');
+  const captureBtn  = document.getElementById('capture-btn');
+
+  function getCanvas() { return spiceContainer.querySelector('canvas'); }
+
+  window.toggleCapture = function() {
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    } else {
+      const canvas = getCanvas();
+      if (canvas) canvas.requestPointerLock();
+    }
+  };
+
+  document.addEventListener('pointerlockchange', () => {
+    const locked = !!document.pointerLockElement;
+    spiceArea.classList.toggle('capture-active', locked);
+    captureHint.classList.toggle('visible', locked);
+    captureBtn.textContent = locked ? '🖱 Release' : '🖱 Capture';
+    captureBtn.style.color = locked ? '#000080' : '';
+  });
+
+  /* Click on the canvas to capture */
+  spiceArea.addEventListener('click', (e) => {
+    if (e.target.closest('canvas') && !document.pointerLockElement) {
+      e.target.closest('canvas').requestPointerLock();
+    }
+  });
+
+  /* ── Fullscreen (fit-to-screen, no stretch) ────────────────────────── */
+  const spiceContainer = document.getElementById('spice-container');
+  const fsBtn          = document.getElementById('fs-btn');
+
+  function applyFsScale() {
+    const canvas = spiceContainer.querySelector('canvas');
+    if (!document.fullscreenElement || !canvas) {
+      spiceContainer.style.transform = '';
+      return;
+    }
+    /* Use innerWidth/Height — these reflect the actual fullscreen viewport */
+    const scaleX = window.innerWidth  / canvas.width;
+    const scaleY = window.innerHeight / canvas.height;
+    const scale  = Math.min(scaleX, scaleY);
+    console.log('[fs] canvas', canvas.width, 'x', canvas.height,
+                '→ viewport', window.innerWidth, 'x', window.innerHeight,
+                '→ scale', scale.toFixed(3));
+    spiceContainer.style.transform = `scale(${scale})`;
+  }
+
+  window.toggleFullscreen = function() {
+    if (!document.fullscreenElement) {
+      spiceArea.requestFullscreen().catch(e => console.warn('fullscreen:', e));
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  document.addEventListener('fullscreenchange', () => {
+    const inFs = !!document.fullscreenElement;
+    fsBtn.textContent = inFs ? '✕ Exit FS' : '⛶ Fullscreen';
+    fsBtn.style.color = inFs ? '#000080' : '';
+    /* small delay so innerWidth/Height reflect the new fullscreen size */
+    setTimeout(applyFsScale, 50);
+  });
+
+  window.addEventListener('resize', applyFsScale);
+
+  /* Re-scale if the VM changes resolution while fullscreen */
+  new ResizeObserver(applyFsScale).observe(spiceContainer);
+
+  /* ── Audio ──────────────────────────────────────────────────────────── */
+  // Browsers block autoplay until user gesture — toggleAudio serves as that gesture
+  window.toggleAudio = function() {
+    const btn   = document.getElementById('audio-btn');
+    audioMuted  = !audioMuted;
+    btn.textContent = audioMuted ? '🔇 Muted' : '🔊 Audio';
+    btn.style.color = audioMuted ? '#808080' : '';
+    applyMuteState(); // no-op if no element yet; observer will apply when it appears
+  };
+
+  if (!code || code.length !== 6) {
+    showError('Invalid VM code.');
+  } else {
+    startVM();
+  }
+
+  async function startVM() {
+    setProgress(10, 'Requesting VM start…');
+    try {
+      const res = await fetch(`/api/vm/${code}/start`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start VM');
+
+      setProgress(50, 'VM started. Connecting SPICE session…');
+
+      const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') +
+        '://' + location.host + '/ws/' + code;
+
+      connectSpice(wsUrl);
+    } catch (err) {
+      showError('⚠ ' + err.message);
+    }
+  }
+
+  function connectSpice(wsUrl) {
+    try {
+      setProgress(80, 'Connecting SPICE session…');
+
+      const sc = new SpiceMainConn({
+        uri: wsUrl,
+        screen_id: 'spice-container',
+        onerror: (e) => {
+          console.error('SPICE error:', e);
+          showError('SPICE connection error: ' + (e.message || e));
+        },
+        onsuccess: () => {
+          setProgress(100, 'Connected!');
+          setTimeout(hideOverlay, 500);
+          setStatus('Connected', 'connected');
+        },
+        onagent: () => {
+          setProgress(90, 'Negotiating session…');
+        }
+      });
+
+      window._spiceConn = sc;
+    } catch (e) {
+      showError('Failed to init SPICE viewer: ' + e.message);
+    }
+  }
+</script>
+</body>
+</html>
