@@ -1,6 +1,6 @@
 # 🖥️ webvm
 
-A Node.js web app that lets users spin up and connect to VMs on your server straight from the browser — no client-side setup needed. Styled like it's 1995.
+A Node.js web app that lets users spin up and connect to VMs on your server straight from the browser - no client-side setup needed. Styled like it's 1995.
 
 **Live demo:** http://vm.uwukitty.ddns.net/
 
