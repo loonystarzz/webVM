@@ -70,6 +70,6 @@ This is mainly for older Windows versions, where after initial install the OOBE 
 ---
 
 ## TO DO
-- limit amounts of vms a user can create  in a specific amount of time
-- Auto-Delete inactive VMS (Not connected to for 3 days or longer.)
+- limit amounts of vms a user can create  in a specific amount of time DONE!!!
+- Auto-Delete inactive VMS (Not connected to for 3 days or longer.) DONE!!!
 

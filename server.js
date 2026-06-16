@@ -5,7 +5,7 @@ import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { vmRouter } from './routes/vm.js';
-import { getVM, ensureVMRunning, getVMSpicePort } from './lib/vmManager.js';
+import { getVM, ensureVMRunning, getVMSpicePort, startCleanupScheduler } from './lib/vmManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -20,7 +20,7 @@ app.use('/api/vm', vmRouter);
 
 app.get('/vm/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
-  const meta = await getVM(code);
+  const meta = await getVM(code); // getVM writes lastAccessed internally
   if (!meta) return res.status(404).sendFile(path.join(__dirname, './public/404.html'));
   res.redirect(`/viewer.html?code=${code}&type=${encodeURIComponent(meta.type)}`);
 });
@@ -35,7 +35,7 @@ server.on('upgrade', async (req, socket, head) => {
   if (!match) { socket.destroy(); return; }
 
   const code = match[1].toUpperCase();
-  const meta = await getVM(code);
+  const meta = await getVM(code); // also updates lastAccessed
   if (!meta) { socket.destroy(); return; }
 
   try {
@@ -69,4 +69,5 @@ server.on('upgrade', async (req, socket, head) => {
 const PORT = process.env.PORT || 3103;
 server.listen(PORT, () => {
   console.log(`\n🖥️  VM Portal running on http://localhost:${PORT}\n`);
+  startCleanupScheduler();
 });
